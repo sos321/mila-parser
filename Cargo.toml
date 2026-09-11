@@ -1,0 +1,8 @@
+[package]
+name = "gmila"
+version = "1.0.0"
+edition = "2024"
+
+[dependencies]
+lazy_static ="1.5" 
+inkwell = { version = "0.6.0", features = ["llvm18-1"] }

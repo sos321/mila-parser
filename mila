@@ -1,0 +1,128 @@
+#!/bin/bash
+set -o errexit -o pipefail -o nounset -o noclobber
+
+# change directory to scripts positon
+cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1
+
+DIR="$(pwd)"
+TARGET_DIR="$DIR/mtarget"
+DEBUG_DIR="$DIR/mtarget/debug"
+
+# sample usage
+usage() {
+  cat <<EOF
+Usage: $0 [-l] [-t] [-c] [-r] <file> | --clean
+  -l   Lex the input file (output tokens)
+  -t   Print AST for the input file
+  -c   Compile input file to .ir in mtarget/
+  -r   Run the program
+  -n   Clean the .ir and .s files
+
+  --clean Erase everything in the mtarget directory
+
+You must provide one <file> and at least one of -l, -t, -c[n], -r[n] or clean
+EOF
+  exit 1
+}
+
+# check at least one argument is present
+if [[ $# -lt 1 ]]; then
+  usage
+fi
+
+# clean target directory
+if [[ "$1" = "--clean" ]]; then
+  echo "Cleaning target directory"
+  rm -rf "$TARGET_DIR"/*
+  exit
+fi
+
+# check if folder exists
+mkdir -p "$TARGET_DIR"
+mkdir -p "$DEBUG_DIR"
+
+# helper vars
+do_lex=false
+do_tree=false
+do_compile=false
+do_run=false
+do_clean=false
+
+# get options
+while getopts "ltcrn" opt; do
+  case "$opt" in
+    l) do_lex=true ;;
+    t) do_tree=true ;;
+    c) do_compile=true ;;
+    r) do_run=true ;;
+    n) do_clean=true ;;
+    *) usage ;;
+  esac
+done
+
+# get file
+shift $((OPTIND - 1))
+
+# check if file was supplied
+if [[ $# -ne 1 ]]; then
+  usage
+fi
+
+input="$1"
+
+abspath() { realpath "$1"; }
+base_no_ext() { f="$(basename "$1")"; echo "${f%.*}"; }
+
+# lex
+if $do_lex; then
+  echo "Lexing tokens from '$input'..."
+  cat "$(abspath "$input")" | cargo run -q -- --lex
+fi
+
+# ast
+if $do_tree; then
+  echo "Printing AST for '$input'..."
+  cat "$(abspath "$input")" | cargo run -q -- --tree
+fi
+
+base=$(base_no_ext "$input")
+ir="$DEBUG_DIR/$base.ir"
+s="$DEBUG_DIR/$base.s"
+exe="$TARGET_DIR/$base"
+
+# compile
+if $do_compile; then
+  echo "Compiling '$input' → '$ir'..."
+
+  # delete previous version
+  rm -f "$ir" "$s" 2>/dev/null
+
+  cat "$(abspath "$input")" | cargo run -q > "$ir" &&
+  llc "$ir" -o "$s" -relocation-model=pic &&
+  clang "$s" "$DIR/src/funcs.c" -o "$exe"
+
+  echo "Done compiling."
+fi
+
+# run
+if $do_run; then
+  if [[ -x $exe ]]; then
+    echo "Running existing '$exe'..."
+
+    ./"$exe"
+
+  else
+    echo "Compiling + Running '$input'..."
+    
+    cat "$(abspath "$input")" | cargo run -q > "$ir" &&
+    llc "$ir" -o "$s" -relocation-model=pic &&
+    clang "$s" "$DIR/src/funcs.c" -o "$exe" &&
+
+    ./"$exe"
+  fi
+fi
+
+if $do_clean; then
+  echo Cleaning...
+  rm -f $ir $s
+fi
