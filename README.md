@@ -1,6 +1,8 @@
 # Mila Compiler
 
-This is my repository for the semestral work for BI-PJP. The assignment was to create a compiler for the Mila language.
+## !! This is still work in progress and does contain errors. !!
+
+The assignment was to create a compiler for the Mila language.
 The code is translated to LLVM IR and then compiled to be able to run the program.
 
 ## Dependencies
